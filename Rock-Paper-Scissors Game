@@ -1,0 +1,150 @@
+import random
+import tkinter as tk
+from tkinter import ttk, messagebox
+
+CHOICES = ["Rock", "Paper", "Scissors"]
+
+RESULT_WIN = "You win!"
+RESULT_LOSE = "You lose!"
+RESULT_TIE = "It's a tie!"
+
+def get_computer_choice():
+    return random.choice(CHOICES)
+
+def determine_winner(user, computer):
+    if user == computer:
+        return RESULT_TIE
+    wins_against = {
+        "Rock": "Scissors",
+        "Paper": "Rock",
+        "Scissors": "Paper"
+    }
+    if wins_against[user] == computer:
+        return RESULT_WIN
+    return RESULT_LOSE
+
+class RPSApp:
+    def __init__(self, root):
+        self.root = root
+        self.root.title("Rock-Paper-Scissors")
+
+        # Scores
+        self.user_score = 0
+        self.computer_score = 0
+        self.rounds_played = 0
+
+        self._build_ui()
+
+    def _build_ui(self):
+        main = ttk.Frame(self.root, padding=16)
+        main.grid(row=0, column=0, sticky="nsew")
+        self.root.columnconfigure(0, weight=1)
+        self.root.rowconfigure(0, weight=1)
+
+        title = ttk.Label(main, text="Rock • Paper • Scissors", font=("Segoe UI", 18, "bold"))
+        title.grid(row=0, column=0, columnspan=3, pady=(0, 12))
+
+        instructions = ttk.Label(
+            main,
+            text="Choose your move. First to 5 points wins, or play casually!"
+        )
+        instructions.grid(row=1, column=0, columnspan=3, pady=(0, 8))
+
+        # Scoreboard
+        self.score_var = tk.StringVar(value="You: 0    Computer: 0    Rounds: 0")
+        score_label = ttk.Label(main, textvariable=self.score_var, font=("Segoe UI", 12, "bold"))
+        score_label.grid(row=2, column=0, columnspan=3, pady=(0, 12))
+
+        # Choices
+        buttons_frame = ttk.Frame(main)
+        buttons_frame.grid(row=3, column=0, columnspan=3, pady=(0, 12))
+
+        for idx, choice in enumerate(CHOICES):
+            btn = ttk.Button(
+                buttons_frame,
+                text=choice,
+                width=12,
+                command=lambda c=choice: self.play_round(c)
+            )
+            btn.grid(row=0, column=idx, padx=6)
+
+        # Outcome
+        self.user_choice_var = tk.StringVar(value="Your choice: -")
+        self.computer_choice_var = tk.StringVar(value="Computer choice: -")
+        self.result_var = tk.StringVar(value="Make a move to start!")
+
+        user_label = ttk.Label(main, textvariable=self.user_choice_var)
+        comp_label = ttk.Label(main, textvariable=self.computer_choice_var)
+        result_label = ttk.Label(main, textvariable=self.result_var, font=("Segoe UI", 12))
+
+        user_label.grid(row=4, column=0, sticky="w")
+        comp_label.grid(row=4, column=1, sticky="w")
+        result_label.grid(row=4, column=2, sticky="e")
+
+        # Controls
+        controls = ttk.Frame(main)
+        controls.grid(row=5, column=0, columnspan=3, pady=(12, 0))
+
+        self.play_again_btn = ttk.Button(controls, text="Play Again", command=self.reset_round, state="disabled")
+        self.play_again_btn.grid(row=0, column=0, padx=6)
+
+        reset_scores_btn = ttk.Button(controls, text="Reset Scores", command=self.reset_scores)
+        reset_scores_btn.grid(row=0, column=1, padx=6)
+
+        quit_btn = ttk.Button(controls, text="Quit", command=self.root.destroy)
+        quit_btn.grid(row=0, column=2, padx=6)
+
+        # Styling
+        style = ttk.Style()
+        try:
+            style.theme_use("clam")
+        except tk.TclError:
+            pass
+
+    def play_round(self, user_choice):
+        computer_choice = get_computer_choice()
+        result = determine_winner(user_choice, computer_choice)
+
+        self.user_choice_var.set(f"Your choice: {user_choice}")
+        self.computer_choice_var.set(f"Computer choice: {computer_choice}")
+        self.result_var.set(result)
+
+        self.rounds_played += 1
+        if result == RESULT_WIN:
+            self.user_score += 1
+        elif result == RESULT_LOSE:
+            self.computer_score += 1
+
+        self._update_scoreboard()
+
+        # Enable Play Again to clear the round display
+        self.play_again_btn.config(state="normal")
+
+        # Optional: notify winner at 5 points
+        if self.user_score >= 5 or self.computer_score >= 5:
+            overall = "You won the match!" if self.user_score > self.computer_score else "Computer won the match!"
+            messagebox.showinfo("Match Over", f"{overall}\nFinal Score - You: {self.user_score}  Computer: {self.computer_score}")
+            self.reset_scores(keep_message=True)
+
+    def _update_scoreboard(self):
+        self.score_var.set(f"You: {self.user_score}    Computer: {self.computer_score}    Rounds: {self.rounds_played}")
+
+    def reset_round(self):
+        self.user_choice_var.set("Your choice: -")
+        self.computer_choice_var.set("Computer choice: -")
+        self.result_var.set("Make a move to start!")
+        self.play_again_btn.config(state="disabled")
+
+    def reset_scores(self, keep_message=False):
+        self.user_score = 0
+        self.computer_score = 0
+        self.rounds_played = 0
+        self._update_scoreboard()
+        self.reset_round()
+        if not keep_message:
+            messagebox.showinfo("Scores Reset", "Scores and round display have been reset.")
+
+if __name__ == "__main__":
+    root = tk.Tk()
+    app = RPSApp(root)
+    root.mainloop()
