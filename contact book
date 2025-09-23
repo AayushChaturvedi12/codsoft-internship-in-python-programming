@@ -1,0 +1,324 @@
+import json
+import os
+import re
+import tkinter as tk
+from dataclasses import dataclass, asdict
+from tkinter import ttk, messagebox
+from uuid import uuid4
+
+DATA_FILE = "contacts.json"
+
+
+@dataclass
+class Contact:
+    id: str
+    name: str
+    phone: str
+    email: str
+    address: str
+
+
+def load_contacts() -> list[Contact]:
+    if not os.path.exists(DATA_FILE):
+        return []
+    try:
+        with open(DATA_FILE, "r", encoding="utf-8") as f:
+            raw = json.load(f)
+        contacts = []
+        for item in raw:
+            # Backward/defensive defaults
+            contacts.append(
+                Contact(
+                    id=item.get("id") or str(uuid4()),
+                    name=item.get("name", "").strip(),
+                    phone=item.get("phone", "").strip(),
+                    email=item.get("email", "").strip(),
+                    address=item.get("address", "").strip(),
+                )
+            )
+        return contacts
+    except Exception:
+        messagebox.showwarning("Load Error", "Failed to load contacts. Starting with an empty list.")
+        return []
+
+
+def save_contacts(contacts: list[Contact]) -> None:
+    try:
+        with open(DATA_FILE, "w", encoding="utf-8") as f:
+            json.dump([asdict(c) for c in contacts], f, indent=2, ensure_ascii=False)
+    except Exception as exc:
+        messagebox.showerror("Save Error", f"Failed to save contacts:\n{exc}")
+
+
+def is_valid_phone(phone: str) -> bool:
+    if not phone:
+        return False
+    return bool(re.fullmatch(r"[0-9+\-\s()]{3,}", phone))
+
+
+class ContactBookApp:
+    def __init__(self, root: tk.Tk):
+        self.root = root
+        self.root.title("Contact Book")
+        self.contacts: list[Contact] = load_contacts()
+        self.filtered_ids: list[str] = []  # ids shown in list
+        self.selected_id: str | None = None
+
+        self._build_ui()
+        self._refresh_list()
+
+    def _build_ui(self):
+        self.root.geometry("820x520")
+        self.root.minsize(780, 480)
+        self.root.columnconfigure(0, weight=1)
+        self.root.rowconfigure(0, weight=1)
+
+        main = ttk.Frame(self.root, padding=12)
+        main.grid(row=0, column=0, sticky="nsew")
+        main.columnconfigure(0, weight=2)
+        main.columnconfigure(1, weight=3)
+        main.rowconfigure(2, weight=1)
+
+        title = ttk.Label(main, text="Contact Book", font=("Segoe UI", 18, "bold"))
+        title.grid(row=0, column=0, columnspan=2, sticky="w", pady=(0, 8))
+
+        # Search bar
+        search_frame = ttk.Frame(main)
+        search_frame.grid(row=1, column=0, columnspan=2, sticky="ew", pady=(0, 10))
+        search_frame.columnconfigure(1, weight=1)
+        ttk.Label(search_frame, text="Search:").grid(row=0, column=0, padx=(0, 8))
+        self.search_var = tk.StringVar()
+        search_entry = ttk.Entry(search_frame, textvariable=self.search_var)
+        search_entry.grid(row=0, column=1, sticky="ew")
+        self.search_var.trace_add("write", lambda *_: self._refresh_list())
+
+        # Left: list of contacts
+        left = ttk.Frame(main)
+        left.grid(row=2, column=0, sticky="nsew", padx=(0, 10))
+        left.rowconfigure(1, weight=1)
+        left.columnconfigure(0, weight=1)
+
+        ttk.Label(left, text="Contacts (Name, Phone)").grid(row=0, column=0, sticky="w", pady=(0, 6))
+
+        columns = ("name", "phone")
+        self.tree = ttk.Treeview(left, columns=columns, show="headings", height=12)
+        self.tree.heading("name", text="Name")
+        self.tree.heading("phone", text="Phone")
+        self.tree.column("name", width=180)
+        self.tree.column("phone", width=140)
+        self.tree.grid(row=1, column=0, sticky="nsew")
+
+        yscroll = ttk.Scrollbar(left, orient="vertical", command=self.tree.yview)
+        self.tree.configure(yscrollcommand=yscroll.set)
+        yscroll.grid(row=1, column=1, sticky="ns")
+
+        self.tree.bind("<<TreeviewSelect>>", self._on_select)
+
+        # Right: form and actions
+        right = ttk.Frame(main)
+        right.grid(row=2, column=1, sticky="nsew")
+        for i in range(2):
+            right.columnconfigure(i, weight=1)
+
+        # Form fields
+        self.name_var = tk.StringVar()
+        self.phone_var = tk.StringVar()
+        self.email_var = tk.StringVar()
+        self.address_var = tk.StringVar()
+
+        form = ttk.Frame(right)
+        form.grid(row=0, column=0, columnspan=2, sticky="ew")
+        for i in range(2):
+            form.columnconfigure(i, weight=1)
+
+        ttk.Label(form, text="Name:").grid(row=0, column=0, sticky="w", pady=(0, 6))
+        name_entry = ttk.Entry(form, textvariable=self.name_var)
+        name_entry.grid(row=1, column=0, sticky="ew", padx=(0, 8))
+
+        ttk.Label(form, text="Phone:").grid(row=0, column=1, sticky="w", pady=(0, 6))
+        phone_entry = ttk.Entry(form, textvariable=self.phone_var)
+        phone_entry.grid(row=1, column=1, sticky="ew")
+
+        ttk.Label(form, text="Email:").grid(row=2, column=0, sticky="w", pady=(10, 6))
+        email_entry = ttk.Entry(form, textvariable=self.email_var)
+        email_entry.grid(row=3, column=0, sticky="ew", padx=(0, 8))
+
+        ttk.Label(form, text="Address:").grid(row=2, column=1, sticky="w", pady=(10, 6))
+        address_entry = ttk.Entry(form, textvariable=self.address_var)
+        address_entry.grid(row=3, column=1, sticky="ew")
+
+        # Buttons
+        btns = ttk.Frame(right)
+        btns.grid(row=1, column=0, columnspan=2, sticky="ew", pady=12)
+        for i in range(4):
+            btns.columnconfigure(i, weight=1)
+
+        self.add_btn = ttk.Button(btns, text="Add Contact", command=self._handle_add)
+        self.update_btn = ttk.Button(btns, text="Update Contact", command=self._handle_update, state="disabled")
+        self.delete_btn = ttk.Button(btns, text="Delete Contact", command=self._handle_delete, state="disabled")
+        self.clear_btn = ttk.Button(btns, text="Clear Form", command=self._clear_form)
+
+        self.add_btn.grid(row=0, column=0, padx=6, sticky="ew")
+        self.update_btn.grid(row=0, column=1, padx=6, sticky="ew")
+        self.delete_btn.grid(row=0, column=2, padx=6, sticky="ew")
+        self.clear_btn.grid(row=0, column=3, padx=6, sticky="ew")
+
+        # Styling
+        try:
+            ttk.Style().theme_use("clam")
+        except tk.TclError:
+            pass
+
+        # Keyboard shortcuts
+        self.root.bind("<Delete>", lambda e: self._handle_delete() if self.selected_id else None)
+        self.root.bind("<Escape>", lambda e: self._clear_form())
+
+        name_entry.focus()
+
+    # ---------- Helpers ----------
+
+    def _normalize(self, text: str) -> str:
+        return (text or "").strip()
+
+    def _validate_form(self) -> tuple[bool, str]:
+        name = self._normalize(self.name_var.get())
+        phone = self._normalize(self.phone_var.get())
+        email = self._normalize(self.email_var.get())
+        address = self._normalize(self.address_var.get())
+
+        if not name:
+            return False, "Name is required."
+        if not phone:
+            return False, "Phone is required."
+        if not is_valid_phone(phone):
+            return False, "Please enter a valid phone number."
+        if email and "@" not in email:
+            return False, "Please enter a valid email address."
+
+        # Unique by phone (except when updating the same record)
+        for c in self.contacts:
+            if c.phone == phone and c.id != (self.selected_id or ""):
+                return False, "A contact with this phone already exists."
+
+        return True, ""
+
+    def _refresh_list(self):
+        query = self._normalize(self.search_var.get()).lower()
+        for row in self.tree.get_children():
+            self.tree.delete(row)
+
+        # Sorting by name
+        sorted_contacts = sorted(self.contacts, key=lambda c: c.name.lower())
+        self.filtered_ids = []
+
+        for c in sorted_contacts:
+            if query:
+                if (query not in c.name.lower()) and (query not in c.phone.lower()):
+                    continue
+            self.tree.insert("", "end", iid=c.id, values=(c.name, c.phone))
+            self.filtered_ids.append(c.id)
+
+        # Keep selection if still visible
+        if self.selected_id and self.selected_id in self.filtered_ids:
+            try:
+                self.tree.selection_set(self.selected_id)
+            except Exception:
+                pass
+        else:
+            self._clear_selection_state()
+
+    def _clear_selection_state(self):
+        self.selected_id = None
+        self.update_btn.config(state="disabled")
+        self.delete_btn.config(state="disabled")
+
+    def _on_select(self, _event=None):
+        sel = self.tree.selection()
+        if not sel:
+            self._clear_selection_state()
+            return
+        cid = sel[0]
+        contact = next((c for c in self.contacts if c.id == cid), None)
+        if not contact:
+            self._clear_selection_state()
+            return
+        self.selected_id = cid
+        self.name_var.set(contact.name)
+        self.phone_var.set(contact.phone)
+        self.email_var.set(contact.email)
+        self.address_var.set(contact.address)
+        self.update_btn.config(state="normal")
+        self.delete_btn.config(state="normal")
+
+    def _clear_form(self):
+        self.name_var.set("")
+        self.phone_var.set("")
+        self.email_var.set("")
+        self.address_var.set("")
+        self.tree.selection_remove(self.tree.selection())
+        self._clear_selection_state()
+
+    # ---------- Actions ----------
+
+    def _handle_add(self):
+        valid, msg = self._validate_form()
+        if not valid:
+            messagebox.showwarning("Invalid Input", msg)
+            return
+
+        new = Contact(
+            id=str(uuid4()),
+            name=self._normalize(self.name_var.get()),
+            phone=self._normalize(self.phone_var.get()),
+            email=self._normalize(self.email_var.get()),
+            address=self._normalize(self.address_var.get()),
+        )
+        self.contacts.append(new)
+        save_contacts(self.contacts)
+        self._refresh_list()
+        self.tree.selection_set(new.id)
+        messagebox.showinfo("Contact Added", f"Added: {new.name}")
+
+    def _handle_update(self):
+        if not self.selected_id:
+            messagebox.showwarning("No Selection", "Select a contact to update.")
+            return
+        valid, msg = self._validate_form()
+        if not valid:
+            messagebox.showwarning("Invalid Input", msg)
+            return
+
+        for idx, c in enumerate(self.contacts):
+            if c.id == self.selected_id:
+                self.contacts[idx] = Contact(
+                    id=c.id,
+                    name=self._normalize(self.name_var.get()),
+                    phone=self._normalize(self.phone_var.get()),
+                    email=self._normalize(self.email_var.get()),
+                    address=self._normalize(self.address_var.get()),
+                )
+                break
+        save_contacts(self.contacts)
+        self._refresh_list()
+        messagebox.showinfo("Contact Updated", "Changes saved.")
+
+    def _handle_delete(self):
+        if not self.selected_id:
+            messagebox.showwarning("No Selection", "Select a contact to delete.")
+            return
+        contact = next((c for c in self.contacts if c.id == self.selected_id), None)
+        if not contact:
+            return
+        if not messagebox.askyesno("Delete Contact", f"Delete '{contact.name}'?"):
+            return
+        self.contacts = [c for c in self.contacts if c.id != contact.id]
+        save_contacts(self.contacts)
+        self._clear_form()
+        self._refresh_list()
+        messagebox.showinfo("Deleted", "Contact removed.")
+
+
+if __name__ == "__main__":
+    root = tk.Tk()
+    app = ContactBookApp(root)
+    root.mainloop()
